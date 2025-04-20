@@ -67,13 +67,13 @@ esp_err_t CircularBuffer::init(char* partition_name, size_t record_size, bool ov
 esp_err_t CircularBuffer::push_back (void* src) {
     size_t sec_size = wl_sector_size(wl_handle);
     size_t back;
-    uint16_t remaining_capacity_in_front_sector = (sec_size - (front % sec_size)) / record_size;
+    uint32_t remaining_capacity_in_front_sector = (sec_size - (front % sec_size)) / record_size;
     if (remaining_capacity_in_front_sector > record_num) { back = front + (record_num * record_size); }
     else {
-        uint16_t remaining_records = record_num - remaining_capacity_in_front_sector;
-        uint16_t full_secs = remaining_records / records_in_sec();
-        uint16_t front_sec = front / sec_size;
-        uint16_t back_sec = (front_sec + full_secs + 1) % sec_num();
+        uint32_t remaining_records = record_num - remaining_capacity_in_front_sector;
+        uint32_t full_secs = remaining_records / records_in_sec();
+        uint32_t front_sec = front / sec_size;
+        uint32_t back_sec = (front_sec + full_secs + 1) % sec_num();
         if (back_sec == front_sec) {
             if (overwrite) {
                 front = ((front_sec + 1) % sec_num()) * sec_size;
@@ -115,7 +115,7 @@ esp_err_t CircularBuffer::pop_front (void* dest) {
 /**
  * @return Number of records currently in the circular buffer
  */
-uint16_t CircularBuffer::get_record_num() { return record_num; }
+uint32_t CircularBuffer::get_record_num() { return record_num; }
 
 /**
  * Deletes one record from the front of the circular buffer
@@ -136,4 +136,4 @@ size_t CircularBuffer::records_in_sec() { return wl_sector_size(wl_handle) / rec
  */
 long unsigned int CircularBuffer::get_max_records() { return sec_num() * records_in_sec(); }
 
-uint16_t CircularBuffer::sec_num() { return wl_size(wl_handle) / wl_sector_size(wl_handle) - secs_for_header(); }
+uint32_t CircularBuffer::sec_num() { return wl_size(wl_handle) / wl_sector_size(wl_handle) - secs_for_header(); }

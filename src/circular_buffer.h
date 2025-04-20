@@ -13,7 +13,7 @@ class CircularBuffer {
         esp_err_t peek_front(void* dest);
         esp_err_t pop_front(void* dest);
         esp_err_t delete_front();
-        uint16_t get_record_num();
+        uint32_t get_record_num();
         long unsigned int get_max_records();
     private:
         size_t front;
@@ -23,7 +23,7 @@ class CircularBuffer {
         wl_handle_t wl_handle;
         size_t secs_for_header();
         esp_err_t write_header();
-        uint16_t sec_num();
+        uint32_t sec_num();
         size_t header_offset();
         bool overwrite = false;
 };
