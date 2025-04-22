@@ -1,6 +1,6 @@
 {
     "name": "circular_buffer",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "An implementation of circular buffer for flash memory.",
     "keywords": "circular buffer, database, tsdb",
     "repository": {
