@@ -4,7 +4,7 @@
 
 size_t CircularBuffer::secs_for_header() {
     size_t sec_size = wl_sector_size(wl_handle);
-    return (sizeof(cb_header) + sec_size - 1) / sec_size;
+    return 2 * ((sizeof(cb_header) + sec_size - 1) / sec_size);
 }
 
 size_t CircularBuffer::header_offset() { return secs_for_header() * wl_sector_size(wl_handle); }
