@@ -1,6 +1,18 @@
 #include "circular_buffer.h"
 
+#include "esp_crc.h"
+
 #define MAGIC 0x5B15B1
+
+void update_crc(struct cb_header *hdr) {
+    hdr->crc = 0;
+    hdr->crc = esp_crc32_le(0, (const uint8_t*)hdr, sizeof(struct cb_header) - sizeof(uint32_t));
+}
+
+bool check_crc(const struct cb_header *hdr) {
+    uint32_t crc = esp_crc32_le(0, (const uint8_t*)hdr, sizeof(struct cb_header) - sizeof(uint32_t));
+    return crc == hdr->crc;
+}
 
 size_t CircularBuffer::secs_for_header() {
     size_t sec_size = wl_sector_size(wl_handle);
@@ -14,6 +26,7 @@ esp_err_t CircularBuffer::write_header() {
     header.magic = MAGIC;
     header.front = front;
     header.record_num = record_num;
+    update_crc(&header);
     esp_err_t err = wl_erase_range(wl_handle, 0, wl_sector_size(wl_handle) * secs_for_header());
     if (err != ESP_OK) { return err; }
     return wl_write(wl_handle, 0, &header, sizeof(header));
@@ -44,7 +57,7 @@ esp_err_t CircularBuffer::init(char* partition_name, size_t record_size, bool ov
     err = wl_read(wl_handle, 0, &header, sizeof(cb_header));
     if (err != ESP_OK) { return err; }
 
-    if (header.magic != MAGIC) {
+    if (header.magic != MAGIC || !check_crc(&header)) {
         front = 0;
         record_num = 0;
         write_header();

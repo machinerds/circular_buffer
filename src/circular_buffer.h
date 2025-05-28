@@ -4,6 +4,7 @@ struct cb_header {
     uint32_t magic;
     size_t front;
     uint32_t record_num;
+    uint32_t crc;
 };
 
 class CircularBuffer {
