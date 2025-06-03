@@ -9,14 +9,18 @@ void update_crc(struct cb_header *hdr) {
     hdr->crc = esp_crc32_le(0, (const uint8_t*)hdr, sizeof(struct cb_header) - sizeof(uint32_t));
 }
 
-bool check_crc(const struct cb_header *hdr) {
+bool check_header(const struct cb_header *hdr) {
     uint32_t crc = esp_crc32_le(0, (const uint8_t*)hdr, sizeof(struct cb_header) - sizeof(uint32_t));
-    return crc == hdr->crc;
+    return crc == hdr->crc && hdr->magic == MAGIC;
+}
+
+size_t CircularBuffer::secs_for_one_header() {
+    size_t sec_size = wl_sector_size(wl_handle);
+    return (sizeof(cb_header) + sec_size - 1) / sec_size;
 }
 
 size_t CircularBuffer::secs_for_header() {
-    size_t sec_size = wl_sector_size(wl_handle);
-    return 2 * ((sizeof(cb_header) + sec_size - 1) / sec_size);
+    return 2 * secs_for_one_header();
 }
 
 size_t CircularBuffer::header_offset() { return secs_for_header() * wl_sector_size(wl_handle); }
@@ -26,10 +30,12 @@ esp_err_t CircularBuffer::write_header() {
     header.magic = MAGIC;
     header.front = front;
     header.record_num = record_num;
+    header.sequence = ++sequence;
     update_crc(&header);
-    esp_err_t err = wl_erase_range(wl_handle, 0, wl_sector_size(wl_handle) * secs_for_header());
+    size_t addr = (sequence % 2) * secs_for_one_header() * wl_sector_size(wl_handle);
+    esp_err_t err = wl_erase_range(wl_handle, addr, secs_for_one_header() * wl_sector_size(wl_handle));
     if (err != ESP_OK) { return err; }
-    return wl_write(wl_handle, 0, &header, sizeof(header));
+    return wl_write(wl_handle, addr, &header, sizeof(header));
 }
 
 /**
@@ -37,9 +43,10 @@ esp_err_t CircularBuffer::write_header() {
  * @param partition_name name of partition in which circular buffer is going to be initialized
  * @param record_size  size of every record in circular buffer
  * @param overwrite whether overwrite feature should be turned on
+ * @param recovery_mode use backup header if header was correupted (this may cause in at most one corrupted record)
  * @return ESP_OK if ok
  */
-esp_err_t CircularBuffer::init(char* partition_name, size_t record_size, bool overwrite) {
+esp_err_t CircularBuffer::init(char* partition_name, size_t record_size, bool overwrite, bool recovery_mode) {
     const esp_partition_t *partition = esp_partition_find_first(
         ESP_PARTITION_TYPE_DATA,
         ESP_PARTITION_SUBTYPE_ANY,
@@ -53,17 +60,42 @@ esp_err_t CircularBuffer::init(char* partition_name, size_t record_size, bool ov
 
     if (record_size > wl_sector_size(wl_handle)) { return ESP_ERR_INVALID_SIZE; }
 
-    cb_header header;
-    err = wl_read(wl_handle, 0, &header, sizeof(cb_header));
+    cb_header header1;
+    err = wl_read(wl_handle, 0, &header1, sizeof(cb_header));
     if (err != ESP_OK) { return err; }
 
-    if (header.magic != MAGIC || !check_crc(&header)) {
+    cb_header header2;
+    err = wl_read(wl_handle, secs_for_one_header() * wl_sector_size(wl_handle), &header2, sizeof(cb_header));
+    if (err != ESP_OK) { return err; }
+
+    bool header1_valid = check_header(&header1);
+    bool header2_valid = check_header(&header2);
+
+    if (header1_valid && header2_valid) {
+        if (header1.sequence > header2.sequence) {
+            front = header1.front;
+            record_num = header1.record_num;
+            sequence = header1.sequence;
+        } else {
+            front = header2.front;
+            record_num = header2.record_num;
+            sequence = header2.sequence;
+        }
+    } else if (recovery_mode && (header1_valid ^ header2_valid)) {
+        if (header1_valid) {
+            front = header1.front;
+            record_num = header1.record_num;
+            sequence = header1.sequence;
+        } else {
+            front = header2.front;
+            record_num = header2.record_num;
+            sequence = header2.sequence;
+        }
+    } else {
         front = 0;
         record_num = 0;
+        sequence = -1;
         write_header();
-    } else {
-        front = header.front;
-        record_num = header.record_num;
     }
 
     this->record_size = record_size;
