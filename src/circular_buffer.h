@@ -15,7 +15,7 @@ class CircularBuffer {
         esp_err_t pop_front(void* dest);
         esp_err_t delete_front();
         uint32_t get_record_num();
-        long unsigned int get_max_records();
+        size_t get_max_records();
     private:
         size_t front;
         size_t record_size;

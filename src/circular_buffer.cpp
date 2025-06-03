@@ -147,6 +147,7 @@ size_t CircularBuffer::records_in_sec() { return wl_sector_size(wl_handle) / rec
 /**
  * @return Capacity of the circular buffer
  */
-long unsigned int CircularBuffer::get_max_records() { return sec_num() * records_in_sec(); }
+
+size_t CircularBuffer::get_max_records() { return sec_num() * records_in_sec(); }
 
 uint32_t CircularBuffer::sec_num() { return wl_size(wl_handle) / wl_sector_size(wl_handle) - secs_for_header(); }
