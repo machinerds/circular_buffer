@@ -4,6 +4,14 @@
 
 #define MAGIC 0x5B15B1
 
+bool is_all_ff(const void *ptr, size_t len) {
+    const uint8_t *p = (const uint8_t *)ptr;
+    for (size_t i = 0; i < len; i++) {
+        if (p[i] != 0xFF) return false;
+    }
+    return true;
+}
+
 void update_crc(struct cb_header *hdr) {
     hdr->crc = 0;
     hdr->crc = esp_crc32_le(0, (const uint8_t*)hdr, sizeof(struct cb_header) - sizeof(uint32_t));
@@ -58,21 +66,26 @@ esp_err_t CircularBuffer::init(char* partition_name, size_t record_size, bool ov
     esp_err_t err = wl_mount(partition, &wl_handle);
     if (err != ESP_OK) { return err; }
 
-    if (record_size > wl_sector_size(wl_handle)) { return ESP_ERR_INVALID_SIZE; }
+    size_t sec_size = wl_sector_size(wl_handle);
+
+    if (record_size > sec_size) { return ESP_ERR_INVALID_SIZE; }
+
+    this->record_size = record_size;
+    this->overwrite = overwrite;
 
     cb_header header1;
     err = wl_read(wl_handle, 0, &header1, sizeof(cb_header));
     if (err != ESP_OK) { return err; }
 
     cb_header header2;
-    err = wl_read(wl_handle, secs_for_one_header() * wl_sector_size(wl_handle), &header2, sizeof(cb_header));
+    err = wl_read(wl_handle, secs_for_one_header() * sec_size, &header2, sizeof(cb_header));
     if (err != ESP_OK) { return err; }
 
     bool header1_valid = check_header(&header1);
     bool header2_valid = check_header(&header2);
 
     if (header1_valid && header2_valid) {
-        if (header1.sequence > header2.sequence) {
+        if (header1.sequence > header2.sequence || (header1.sequence == 0 && header2.sequence == UINT32_MAX)) {
             front = header1.front;
             record_num = header1.record_num;
             sequence = header1.sequence;
@@ -91,15 +104,22 @@ esp_err_t CircularBuffer::init(char* partition_name, size_t record_size, bool ov
             record_num = header2.record_num;
             sequence = header2.sequence;
         }
+        size_t back = get_back();
+        if (back % sec_size != 0) {
+            void* next = malloc(record_size);
+            wl_read(wl_handle, header_offset() + back, next, record_size);
+            if (!is_all_ff(next, record_size)) {
+                ++record_num;
+                write_header();
+            }
+            free(next);
+        }
     } else {
         front = 0;
         record_num = 0;
         sequence = -1;
         write_header();
     }
-
-    this->record_size = record_size;
-    this->overwrite = overwrite;
 
     return ESP_OK;
 }
@@ -183,3 +203,17 @@ size_t CircularBuffer::records_in_sec() { return wl_sector_size(wl_handle) / rec
 size_t CircularBuffer::get_max_records() { return sec_num() * records_in_sec(); }
 
 uint32_t CircularBuffer::sec_num() { return wl_size(wl_handle) / wl_sector_size(wl_handle) - secs_for_header(); }
+
+size_t CircularBuffer::get_back() {
+    size_t sec_size = wl_sector_size(wl_handle);
+    uint32_t remaining_capacity_in_front_sector = (sec_size - (front % sec_size)) / record_size;
+    if (remaining_capacity_in_front_sector > record_num) { return front + (record_num * record_size); }
+    else {
+        uint32_t remaining_records = record_num - remaining_capacity_in_front_sector;
+        uint32_t full_secs = remaining_records / records_in_sec();
+        uint32_t front_sec = front / sec_size;
+        uint32_t back_sec = (front_sec + full_secs + 1) % sec_num();
+        size_t back_offset_in_sec = (remaining_records % records_in_sec()) * record_size;
+        return back_sec * sec_size + back_offset_in_sec;
+    }
+}

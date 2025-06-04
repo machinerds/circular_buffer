@@ -29,5 +29,6 @@ class CircularBuffer {
         esp_err_t write_header();
         uint32_t sec_num();
         size_t header_offset();
+        size_t get_back();
         bool overwrite = false;
 };
