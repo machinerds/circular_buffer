@@ -2,6 +2,8 @@
 
 #include "esp_crc.h"
 
+#include <cstdlib>
+
 #define MAGIC 0x5B15B1
 
 bool is_all_ff(const void *ptr, size_t len) {
